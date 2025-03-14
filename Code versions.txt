@@ -1,0 +1,328 @@
+-1 VN:
+import pandas as pd
+import numpy as np
+import tensorflow as tf
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Dropout, BatchNormalization
+from tensorflow.keras.utils import to_categorical
+import matplotlib.pyplot as plt
+# Load the dataset
+data = pd.read_csv("../fer2013.csv/fer2013.csv")
+
+# Check the first few rows
+print(data.head())
+
+# Dataset summary
+print(data['Usage'].value_counts())
+print(data['emotion'].value_counts())
+# Convert 'pixels' column to numpy arrays
+def preprocess_data(data):
+    X = np.array([np.fromstring(pixels, dtype=int, sep=' ').reshape(48, 48, 1) 
+                  for pixels in data['pixels']])
+    X = X / 255.0  # Normalize pixel values
+    y = to_categorical(data['emotion'], num_classes=7)  # One-hot encode labels
+    return X, y
+
+# Split dataset into training, validation, and testing
+train_data = data[data['Usage'] == 'Training']
+val_data = data[data['Usage'] == 'PublicTest']
+test_data = data[data['Usage'] == 'PrivateTest']
+
+X_train, y_train = preprocess_data(train_data)
+X_val, y_val = preprocess_data(val_data)
+X_test, y_test = preprocess_data(test_data)
+
+print(f"Training data shape: {X_train.shape}, {y_train.shape}")
+print(f"Validation data shape: {X_val.shape}, {y_val.shape}")
+print(f"Test data shape: {X_test.shape}, {y_test.shape}")
+model = Sequential([
+    Conv2D(32, (3, 3), activation='relu', input_shape=(48, 48, 1)),
+    BatchNormalization(),
+    MaxPooling2D((2, 2)),
+    Dropout(0.25),
+
+    Conv2D(64, (3, 3), activation='relu'),
+    BatchNormalization(),
+    MaxPooling2D((2, 2)),
+    Dropout(0.25),
+
+    Conv2D(128, (3, 3), activation='relu'),
+    BatchNormalization(),
+    MaxPooling2D((2, 2)),
+    Dropout(0.25),
+
+    Flatten(),
+    Dense(256, activation='relu'),
+    BatchNormalization(),
+    Dropout(0.5),
+    Dense(7, activation='softmax')
+])
+
+model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+model.summary()
+history = model.fit(
+    X_train, y_train,
+    validation_data=(X_val, y_val),
+    epochs=5,
+    batch_size=64
+)
+# Evaluate on the test set
+test_loss, test_accuracy = model.evaluate(X_test, y_test)
+print(f"Test Accuracy: {test_accuracy * 100:.2f}%")
+model.save('emotion_detection_model.keras')
+# Plot training and validation accuracy
+plt.plot(history.history['accuracy'], label='Training Accuracy')
+plt.plot(history.history['val_accuracy'], label='Validation Accuracy')
+plt.xlabel('Epochs')
+plt.ylabel('Accuracy')
+plt.legend()
+plt.show()
+from tensorflow.keras.models import load_model
+
+# Load the model
+model = load_model('emotion_detection_model.keras')
+
+# Recompile the model with the desired optimizer
+model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+
+'''
+# Import necessary libraries
+import cv2
+import numpy as np
+import tensorflow as tf
+import matplotlib.pyplot as plt
+
+import cv2
+
+# Initialize the webcam
+cap = cv2.VideoCapture(0)
+
+# Emotion labels
+emotion_labels = ['Angry', 'Disgust', 'Fear', 'Happy', 'Sad', 'Surprise', 'Neutral']
+
+# Load the trained model
+model = tf.keras.models.load_model('emotion_detection_model.keras')
+
+# Load OpenCV's pre-trained face detector
+face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+
+while True:
+    ret, frame = cap.read()
+    if not ret:
+        break
+
+    # Convert frame to grayscale
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+    # Detect faces
+    faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5)
+
+    for (x, y, w, h) in faces:
+        roi_gray = gray[y:y+h, x:x+w]
+        roi_gray = cv2.resize(roi_gray, (48, 48))
+        roi_gray = roi_gray.reshape(1, 48, 48, 1) / 255.0  # Preprocess for the model
+
+        # Predict the emotion
+        emotion = np.argmax(model.predict(roi_gray))
+        label = emotion_labels[emotion]
+
+        # Draw rectangle and label
+        cv2.rectangle(frame, (x, y), (x+w, y+h), (255, 0, 0), 2)
+        cv2.putText(frame, label, (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2)
+
+    # Show the video feed
+    cv2.imshow('Emotion Detection', frame)
+
+    # Exit condition
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
+
+cap.release()
+cv2.destroyAllWindows()
+
+
+from IPython.display import display, Javascript
+
+# Function to capture video using JavaScript in the notebook
+def capture_video():
+    display(Javascript(''
+        var video = document.createElement("video");
+        video.width = 640;
+        video.height = 480;
+        document.body.appendChild(video);
+
+        var canvas = document.createElement("canvas");
+        canvas.width = 640;
+        canvas.height = 480;
+        document.body.appendChild(canvas);
+
+        var stream;
+        var ctx = canvas.getContext('2d');
+
+        navigator.mediaDevices.getUserMedia({ video: true })
+            .then(function(s) {
+                stream = s;
+                video.srcObject = stream;
+                video.play();
+
+                function capture() {
+                    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                    var data = canvas.toDataURL('image/png'); // Get image data from the canvas
+                    google.colab.kernel.invokeFunction('notebook.capture_frame', [data], {}); // Send frame to Python
+                    requestAnimationFrame(capture);
+                }
+
+                capture();
+            })
+            .catch(function(err) {
+                console.log("Error accessing webcam: ", err);
+            });
+    ''))
+
+# Function to process the captured frame and display it
+def capture_frame(data):
+    # Decode the base64 image data sent from JavaScript
+    image_data = base64.b64decode(data.split(',')[1])
+    image = Image.open(BytesIO(image_data))
+
+    # Convert the image to OpenCV format
+    image = np.array(image)
+    image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+
+    # Load the trained model for emotion prediction
+    model = tf.keras.models.load_model('emotion_detection_model.keras')
+
+    # Emotion labels for prediction
+    emotion_labels = ['Angry', 'Disgust', 'Fear', 'Happy', 'Sad', 'Surprise', 'Neutral']
+
+    # Convert the image to grayscale
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+    # Initialize the face detector
+    face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+    faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5)
+
+    # Process each detected face
+    for (x, y, w, h) in faces:
+        roi_gray = gray[y:y + h, x:x + w]
+        roi_gray = cv2.resize(roi_gray, (48, 48))
+        roi_gray = roi_gray.reshape(1, 48, 48, 1) / 255.0  # Preprocess for the model
+
+        # Predict the emotion
+        emotion = np.argmax(model.predict(roi_gray))
+        label = emotion_labels[emotion]
+
+        # Draw rectangle around the face and label the emotion
+        cv2.rectangle(image, (x, y), (x + w, y + h), (255, 0, 0), 2)
+        cv2.putText(image, label, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2)
+
+    # Convert the image back to RGB format for displaying
+    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+
+    # Display the processed frame using matplotlib
+    plt.imshow(image)
+    plt.axis('off')  # Hide axis for cleaner display
+    plt.show()
+
+# Register the callback function for capturing frames
+from google.colab import output
+output.register_callback('notebook.capture_frame', capture_frame)
+# Start capturing the video
+capture_video()'''
+Current VN:
+import pandas as pd
+import numpy as np
+import tensorflow as tf
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Dropout, BatchNormalization
+from tensorflow.keras.regularizers import l2
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from tensorflow.keras.callbacks import ReduceLROnPlateau, EarlyStopping
+from tensorflow.keras.optimizers import AdamW
+import matplotlib.pyplot as plt
+
+# Load dataset
+data = pd.read_csv("../fer2013.csv/fer2013.csv")
+
+# Convert 'pixels' column to numpy arrays
+def preprocess_data(data):
+    X = np.array([np.fromstring(pixels, dtype=int, sep=' ').reshape(48, 48, 1) 
+                  for pixels in data['pixels']])
+    X = X / 255.0  # Normalize pixel values
+    y = tf.keras.utils.to_categorical(data['emotion'], num_classes=7)  # One-hot encode labels
+    return X, y
+
+# Split dataset
+train_data = data[data['Usage'] == 'Training']
+val_data = data[data['Usage'] == 'PublicTest']
+test_data = data[data['Usage'] == 'PrivateTest']
+
+X_train, y_train = preprocess_data(train_data)
+X_val, y_val = preprocess_data(val_data)
+X_test, y_test = preprocess_data(test_data)
+
+# Data augmentation to improve generalization
+datagen = ImageDataGenerator(
+    rotation_range=20,
+    width_shift_range=0.2,
+    height_shift_range=0.2,
+    shear_range=0.2,
+    zoom_range=0.2,
+    horizontal_flip=True
+)
+datagen.fit(X_train)
+
+# Define CNN Model
+model = Sequential([
+    Conv2D(64, (3, 3), activation='relu', padding='same', kernel_regularizer=l2(0.001), input_shape=(48, 48, 1)),
+    BatchNormalization(),
+    MaxPooling2D((2, 2)),
+    Dropout(0.3),
+
+    Conv2D(128, (3, 3), activation='relu', padding='same', kernel_regularizer=l2(0.001)),
+    BatchNormalization(),
+    MaxPooling2D((2, 2)),
+    Dropout(0.3),
+
+    Conv2D(256, (3, 3), activation='relu', padding='same', kernel_regularizer=l2(0.001)),
+    BatchNormalization(),
+    MaxPooling2D((2, 2)),
+    Dropout(0.3),
+
+    Flatten(),
+    Dense(512, activation='relu', kernel_regularizer=l2(0.001)),
+    BatchNormalization(),
+    Dropout(0.5),
+    Dense(7, activation='softmax')
+])
+
+# Compile Model
+model.compile(optimizer=AdamW(learning_rate=0.001), loss='categorical_crossentropy', metrics=['accuracy'])
+model.summary()
+
+# Callbacks
+reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=5, min_lr=1e-6)
+early_stop = EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
+
+# Train Model
+history = model.fit(
+    datagen.flow(X_train, y_train, batch_size=64),
+    validation_data=(X_val, y_val),
+    epochs=30,
+    callbacks=[reduce_lr, early_stop]
+)
+
+# Evaluate on Test Set
+test_loss, test_accuracy = model.evaluate(X_test, y_test)
+print(f"Test Accuracy: {test_accuracy * 100:.2f}%")
+
+# Save Model
+model.save('emotion_detection_model.keras')
+
+# Plot Accuracy
+plt.plot(history.history['accuracy'], label='Training Accuracy')
+plt.plot(history.history['val_accuracy'], label='Validation Accuracy')
+plt.xlabel('Epochs')
+plt.ylabel('Accuracy')
+plt.legend()
+plt.show()
